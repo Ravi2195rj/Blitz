@@ -754,7 +754,7 @@ code Kernel
         -- 
           threadManagerLock.Lock()
           (*th).status = UNUSED
-          freeList.AddToEnd(th)
+           freeList.AddToEnd(th)
           threadBecameFree.Signal(&threadManagerLock)
           threadManagerLock.Unlock()
         endMethod
@@ -844,7 +844,20 @@ code Kernel
         -- This method is called once at kernel startup time to initialize
         -- the one and only "processManager" object.  
         --
-        -- NOT IMPLEMENTED
+        var i: int
+          processTable = new array of ProcessControlBlock{MAX_NUMBER_OF_PROCESSES of new ProcessControlBlock}
+          freeList = new List[ProcessControlBlock]
+          processManagerLock = new Mutex
+          aProcessBecameFree = new Condition
+          aProcessDied = new Condition
+          for i=0 to MAX_NUMBER_OF_PROCESSES - 1
+            processTable[i].Init()
+            freeList.AddToEnd(&processTable[i])
+            processTable[i].status = FREE
+          endFor
+        processManagerLock.Init()
+        aProcessBecameFree.Init()
+        aProcessDied.Init()
         endMethod
 
       ----------  ProcessManager . Print  ----------
@@ -899,8 +912,17 @@ code Kernel
         -- This method returns a new ProcessControlBlock; it will wait
         -- until one is available.
         --
-          -- NOT IMPLEMENTED
-          return null
+        var nextProcess: ptr to ProcessControlBlock
+          processManagerLock.Lock()
+          while freeList.IsEmpty()
+            aProcessBecameFree.Wait(&processManagerLock)
+          endWhile
+          nextProcess = freeList.Remove()
+          (*nextProcess).pid = nextPid
+          nextPid = nextPid + 1
+          (*nextProcess).status = ACTIVE
+          processManagerLock.Unlock()
+          return nextProcess
         endMethod
 
       ----------  ProcessManager . FreeProcess  ----------
@@ -910,7 +932,11 @@ code Kernel
         -- This method is passed a ptr to a Process;  It moves it
         -- to the FREE list.
         --
-          -- NOT IMPLEMENTED
+          processManagerLock.Lock()
+				  (*p).status = FREE
+				  freeList.AddToEnd(p)
+				  aProcessBecameFree.Signal(&processManagerLock)
+				  processManagerLock.Unlock()
         endMethod
 
 
@@ -995,19 +1021,19 @@ code Kernel
           var f, frameAddr: int
 
           -- Acquire exclusive access to the frameManager data structure...
-          frameManagerLock.Lock ()
+          -- frameManagerLock.Lock ()
 
           -- Wait until we have enough free frames to entirely satisfy the request...
-          while numberFreeFrames < 1
-            newFramesAvailable.Wait (&frameManagerLock)
-          endWhile
+          -- while numberFreeFrames < 1
+          -- newFramesAvailable.Wait (&frameManagerLock)
+          -- endWhile
 
           -- Find a free frame and allocate it...
           f = framesInUse.FindZeroAndSet ()
-          numberFreeFrames = numberFreeFrames - 1
+          -- numberFreeFrames = numberFreeFrames - 1
 
           -- Unlock...
-          frameManagerLock.Unlock ()
+          -- frameManagerLock.Unlock ()
 
           -- Compute and return the physical address of the frame...
           frameAddr = PHYSICAL_ADDRESS_OF_FIRST_PAGE_FRAME + (f * PAGE_SIZE)
@@ -1015,16 +1041,42 @@ code Kernel
           return frameAddr
         endMethod
 
+     
       ----------  FrameManager . GetNewFrames  ----------
 
       method GetNewFrames (aPageTable: ptr to AddrSpace, numFramesNeeded: int)
-          -- NOT IMPLEMENTED
+        var 
+					i:int
+					frameAddr: int
+				  frameManagerLock.Lock()
+          while numberFreeFrames < numFramesNeeded
+            newFramesAvailable.Wait (&frameManagerLock)
+          endWhile
+				  for i = 0 to numFramesNeeded - 1
+					  frameAddr = self.GetAFrame()
+					  (*aPageTable).SetFrameAddr(i, frameAddr)
+				  endFor
+				  numberFreeFrames = numberFreeFrames - numFramesNeeded
+				  (*aPageTable).numberOfPages = numFramesNeeded
+				  frameManagerLock.Unlock()
         endMethod
 
       ----------  FrameManager . ReturnAllFrames  ----------
 
       method ReturnAllFrames (aPageTable: ptr to AddrSpace)
-          -- NOT IMPLEMENTED
+        var 
+					i:int
+					bitIndex: int
+					frameAddr: int
+				  frameManagerLock.Lock()
+				  for i = 0 to (*aPageTable).numberOfPages - 1
+					  frameAddr = (*aPageTable).ExtractFrameAddr(i)
+					  bitIndex = (frameAddr - PHYSICAL_ADDRESS_OF_FIRST_PAGE_FRAME) / PAGE_SIZE
+					  framesInUse.ClearBit(bitIndex)
+				  endFor
+				  numberFreeFrames = numberFreeFrames + aPageTable.numberOfPages
+				  newFramesAvailable.Broadcast(&frameManagerLock)
+				  frameManagerLock.Unlock()
         endMethod
 
     endBehavior
