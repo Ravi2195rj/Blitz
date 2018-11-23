@@ -1024,20 +1024,17 @@ code Kernel
 -- This method returns a new Thread; it will wait
 -- until one is available.
          
-      var
-        threadInUse: ptr to Thread
+        var threadInUse: ptr to Thread
 
-        threadManagerLock.Lock() 							-- acquires monitors mutex
+          threadManagerLock.Lock() 							-- acquires monitors mutex
 
-        if (freeList.IsEmpty())
-		aThreadBecameFree.Wait(&threadManagerLock)				-- if freeList is empty make the requesting thread wait on condition variable for resources 
-	endIf			
-	threadInUse=freeList.Remove()
-	if !threadInUse									-- if freelist is empty print fatal error	
-		FatalError("Cannot not remove any thread as the waiting list is empty:  ")
-	endIf
-	
-	
+          if (freeList.IsEmpty())
+		        aThreadBecameFree.Wait(&threadManagerLock)				-- if freeList is empty make the requesting thread wait on condition variable for resources 
+	        endIf			
+	        threadInUse=freeList.Remove()
+	        if !threadInUse									-- if freelist is empty print fatal error	
+		        FatalError("Cannot not remove any thread as the waiting list is empty:  ")
+	        endIf
           threadInUse.status = JUST_CREATED						-- sets the status of thread as just created 
 
           threadManagerLock.Unlock()						  	-- releases monitors mutex
