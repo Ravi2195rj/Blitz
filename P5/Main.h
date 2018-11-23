@@ -1,6 +1,7 @@
 header Main
 
-  uses System, Thread, Synch  
+  uses Kernel
+ 
   functions
     main ()
 

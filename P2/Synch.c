@@ -95,26 +95,30 @@ code Synch
       ----------  Mutex . Init  ----------
 
       method Init ()
-          FatalError ("Unimplemented method")
+          sema = new Semaphore
+          sema.Init (1)
         endMethod
 
       ----------  Mutex . Lock  ----------
-
       method Lock ()
-          FatalError ("Unimplemented method")
+        sema.Down ()
+        heldBy = currentThread
         endMethod
 
       ----------  Mutex . Unlock  ----------
 
       method Unlock ()
-          FatalError ("Unimplemented method")
+        heldBy = null
+        sema.Up()
         endMethod
 
       ----------  Mutex . IsHeldByCurrentThread  ----------
 
       method IsHeldByCurrentThread () returns bool
-          FatalError ("Unimplemented method")
-          return false
+        if heldBy == currentThread
+          return true
+        endIf
+        return false
         endMethod
 
   endBehavior
