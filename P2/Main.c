@@ -560,12 +560,12 @@ code Main
       monitorLock.Lock()
       status[p] = THINKING
       self.PrintAllStatus()
-      if status[(p+2)%5] != EATING && status[(p)%5] != EATING
+      if status[(p+1)%5] == HUNGRY && status[(p+2)%5] != EATING && status[(p)%5] != EATING
         status[(p+1)%5] = EATING
         self.PrintAllStatus()
         startEating[(p+1)%5].Signal( & monitorLock )
       endIf
-      if status[(p-2 + 5)%5] != EATING && status[(p)%5] != EATING
+      if status[(p-1+5)%5] == HUNGRY && status[(p-2 + 5)%5] != EATING && status[(p)%5] != EATING
         status[((p-1)+5)%5] = EATING
         self.PrintAllStatus()
         startEating[(p-1+5)%5].Signal( & monitorLock )
