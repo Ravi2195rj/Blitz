@@ -59,6 +59,8 @@ header Kernel
     processManager: ProcessManager
     threadManager: ThreadManager
     frameManager: FrameManager
+    testHoareSemantic: TestHoareSemantic
+    processManagerHoareSemantic: ProcessManagerHoareSemantic
     --diskDriver: DiskDriver
     --serialDriver: SerialDriver
     --fileManager: FileManager
@@ -159,6 +161,72 @@ header Kernel
       Broadcast (mutex: ptr to Mutex)
   endClass
 
+
+
+  --------------- HoareMutex  ---------------
+
+-- this class is written for mutex implementation used for hoare semantic testing code
+--  it contains 4 functions 
+-- init() to initialize all objects
+-- lock() to give lock implementation
+-- unlock() to give unlock implementation
+-- GiveLock() to handover the lock 
+-- IsHeldByCurrentThread() to check if heldBy is in current thread  
+
+  class HoareMutex
+    superclass Object
+    fields
+      heldBy: ptr to Thread           -- Null means this mutex is unlocked.
+      waitingThreads: List [Thread]
+    methods
+      Init ()
+      Lock ()
+      Unlock ()
+      GiveLock(th: ptr to Thread)
+      IsHeldByCurrentThread () returns bool
+  endClass
+
+
+  --------------- HoareCondition  ---------------
+
+-- this class is  Condition class used for hoare semantic testing code
+--  it contains 3 functions
+-- Wait() to make wait the requesting threads for resources
+-- Signal to give signal for a thread at front of  waiting threads list for resources
+-- Broadcast() to give signal for all  waiting threads list for resources
+
+
+  class HoareCondition
+    superclass Object
+    fields
+      waitingThreads: List [Thread]
+      TestMutex: HoareMutex 
+    methods
+      Init ()
+      Wait (mutex: ptr to HoareMutex)
+      Signal (mutex: ptr to HoareMutex)
+      Broadcast (mutex: ptr to HoareMutex)
+  endClass
+
+-----------------------------  TestHoareSemantic  ---------------------------------
+  --
+  --  There is only one instance of this class, created at startup time.
+  --	This class is created to test the hoare semantic code where the threads requests 
+  --      for some thread resources and adds resources to freelist after complete execution
+
+  class TestHoareSemantic
+    superclass Object
+    fields
+      threadTable: array [MAX_NUMBER_OF_PROCESSES] of Thread
+      freeList: List [Thread]
+      aThreadBecameFree: HoareCondition
+      threadManagerLock:HoareMutex
+    methods
+      Init ()
+      Print ()
+      GetANewThread () returns ptr to Thread
+      FreeThread (th: ptr to Thread)
+  endClass
   ---------------  Thread  ---------------
 
   class Thread
@@ -237,6 +305,29 @@ header Kernel
       aProcessBecameFree: Condition           --     apply to the "freeList"
       freeList: List [ProcessControlBlock]
       aProcessDied: Condition                 -- Signalled for new ZOMBIEs
+      nextPid: int
+    methods
+      Init ()
+      Print ()
+      PrintShort ()
+      GetANewProcess () returns ptr to ProcessControlBlock
+      FreeProcess (p: ptr to ProcessControlBlock)
+      --TurnIntoZombie (p: ptr to ProcessControlBlock)
+      --WaitForZombie (proc: ptr to ProcessControlBlock) returns int
+  endClass
+
+  -----------------------------  ProcessManagerHoareSemantic  ---------------------------------
+  --
+  --  There is only one instance of this class, created at startup time.
+  --
+  class ProcessManagerHoareSemantic
+    superclass Object
+    fields
+      processTable: array [MAX_NUMBER_OF_PROCESSES] of ProcessControlBlock
+      processManagerLock: HoareMutex               -- These synchronization objects
+      aProcessBecameFree: HoareCondition           --     apply to the "freeList"
+      freeList: List [ProcessControlBlock]
+      aProcessDied: HoareCondition                 -- Signalled for new ZOMBIEs
       nextPid: int
     methods
       Init ()

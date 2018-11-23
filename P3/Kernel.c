@@ -438,6 +438,199 @@ code Kernel
 
   endBehavior
 
+-----------------------------  HoareMutex  ---------------------------------
+
+  behavior HoareMutex
+
+   -- This class is written to provide Mutex lock implementation to just TestHoareSemantic class
+    -- This class provides the following methods:
+    --    Lock()
+    --         Acquire the mutex if free, otherwise wait until the mutex is
+    --         free and then get it.
+    --    Unlock()
+    --         Release the mutex.  If other threads are waiting, then
+    --         wake up the oldest one and give it the lock.
+    --    Init()
+    --         Each mutex must be initialized.
+    --    GiveLock()
+    --         It handsoff the lock to the thread waiting in front of waiting list 
+    --    IsHeldByCurrentThread()
+    --         Return TRUE iff the current (invoking) thread holds a lock
+    --         on the mutex.
+
+       ----------- HoareMutex . Init  -----------
+
+       method Init ()
+           waitingThreads = new List [Thread]
+         endMethod
+
+       ----------- HoareMutex . Lock  -----------
+
+       method Lock ()
+           var
+             oldIntStat: int
+           if heldBy == currentThread
+             FatalError ("Attempt to lock a mutex by a thread already holding it")
+           endIf
+           oldIntStat = SetInterruptsTo (DISABLED)
+           if !heldBy
+             heldBy = currentThread
+           else
+             waitingThreads.AddToEnd (currentThread)
+             currentThread.Sleep ()
+           endIf
+           oldIntStat = SetInterruptsTo (oldIntStat)
+         endMethod
+
+ ----------- HoareMutex . Unlock  -----------
+
+       method Unlock ()
+           var
+             oldIntStat: int
+             t: ptr to Thread
+           if heldBy != currentThread
+            FatalError ("Attempt to unlock a mutex by a thread not holding it")
+           endIf
+           oldIntStat = SetInterruptsTo (DISABLED)
+           t = waitingThreads.Remove ()
+           if t
+             t.status = READY
+             readyList.AddToEnd (t)
+             heldBy = t
+           else
+             heldBy = null
+           endIf
+           oldIntStat = SetInterruptsTo (oldIntStat)
+         endMethod
+
+       ----------- HoareMutex . IsHeldByCurrentThread  -----------
+
+       method IsHeldByCurrentThread () returns bool
+           return heldBy == currentThread
+         endMethod
+
+
+	---------HoareMutex . GiveLock --------------------
+	
+	method GiveLock (th: ptr to Thread)
+		heldBy = th 
+	endMethod
+
+  endBehavior
+
+----------------------------- HoareCondition  ---------------------------------
+
+  behavior HoareCondition
+    -- This class is used to implement monitors.  Each monitor will have a
+    -- mutex lock and one or more condition variables.  The lock ensures that
+    -- only one process at a time may execute code in the monitor.  Within the
+    -- monitor code, a thread can execute Wait() and Signal() operations
+    -- on the condition variables to make sure certain condions are met.
+    --
+    -- The condition variables here implement "Hoare-style" semantics, which
+    -- means that in the time between a Signal() operation and the awakening
+    --  the waiting thread at front of condition variable waiting list directly 
+    --	gets a lock from the currentThread and the thread that gets the lock
+    --	 does not re-check the data
+    --
+    -- This class provides the following methods:
+    --    Wait(mutex)
+    --         This method assumes the mutex has alreasy been locked.
+    --         It unlocks it, and goes to sleep waiting for a signal on
+    --         this condition.  When the signal is received, this method
+    --         re-awakens,but does not  re-locks the mutex as it already has a mutex
+    --		passed to it, and then returns.
+    --    Signal(mutex)
+    --         If there are any threads waiting on this condition, this
+    --         method will wake up the oldest and schedule it to run.
+    --         However, here as this newly awakened thread  holds the mutex 
+    --         So it, will get the chance to run over other threads in ready list as  it has the lock
+    --         and resume execution.
+    --    Broadcast(mutex)
+    --         This method is like Signal() except that it wakes up all
+    --         threads waiting on this condition, not just the next one.
+    --    Init()
+    --         Each condition must be initialized.
+
+
+      ---------- HoareCondition . Init  ----------
+
+   -- initializing function
+
+      method Init ()
+          waitingThreads = new List [Thread]
+        endMethod
+
+      ---------- HoareCondition . Wait  ----------
+
+  -- method to make requesting resources wait on condition variable 
+  -- if they dont have enough resources to fulfil there request
+
+      method Wait (mutex: ptr to HoareMutex)
+          var
+            oldIntStat: int
+          if ! mutex.IsHeldByCurrentThread ()
+            FatalError ("Attempt to wait on condition when mutex is not held")
+          endIf
+          oldIntStat = SetInterruptsTo (DISABLED)
+          mutex.Unlock ()
+          waitingThreads.AddToEnd (currentThread)
+          currentThread.Sleep ()
+          oldIntStat = SetInterruptsTo (oldIntStat)
+        endMethod
+
+  ---------- HoareCondition . Signal  ----------
+
+-- method to make waiting threads for acquiring resources in waiting thread list of condition variable
+
+      method Signal (mutex: ptr to HoareMutex)
+
+          var
+            oldIntStat: int
+            t: ptr to Thread
+	
+          if ! mutex.IsHeldByCurrentThread ()
+            FatalError ("Attempt to signal a condition when mutex is not held")
+          endIf
+          oldIntStat = SetInterruptsTo (DISABLED)
+          t = waitingThreads.Remove ()								-- removes the thread from waiting list front in order to pass a lock
+	  
+          if t
+	          mutex.GiveLock(t)									-- gives lock to the thread at the head of waiting list of condition variable
+            t.status = READY									-- makes the status ready 
+            readyList.AddToFront(t)								-- adds this newly awekened thread with lock at the add of ready list
+            mutex.Lock()	 									-- makes to block the thread trying to lock a mutex, and put it on waiting list of mutex 
+          endIf
+
+          oldIntStat = SetInterruptsTo (oldIntStat)
+        endMethod
+
+    ----------  HoareCondition . Broadcast  ----------
+
+      method Broadcast (mutex: ptr to HoareMutex)
+
+-- this method will signal all waiting threads for acquiring resources
+
+          var
+            oldIntStat: int
+            t: ptr to Thread
+          if ! mutex.IsHeldByCurrentThread ()
+            FatalError ("Attempt to broadcast a condition when lock is not held")
+          endIf
+          oldIntStat = SetInterruptsTo (DISABLED)
+          while true
+            t = waitingThreads.Remove ()
+            if t == null
+              break
+            endIf
+            t.status = READY
+            readyList.AddToEnd (t)
+          endWhile
+          oldIntStat = SetInterruptsTo (oldIntStat)
+        endMethod
+
+  endBehavior
+
 -----------------------------  Thread  ---------------------------------
 
   behavior Thread
@@ -761,6 +954,118 @@ code Kernel
 
     endBehavior
 
+
+-----------------------------  TestHoareSemantic  ---------------------------------
+
+  behavior TestHoareSemantic
+
+-- This behaviour is written to test the hoare semantics 
+-- In this behaviour hoare semantics is checked on ThreadManager
+-- Here the current thread holding a lock directly hands over a lock 
+-- To a waiting thread on condition variable 
+-- After awakening thread that acquires lock does not have to wait for its turn to run and 
+-- Also it does not check recheck the condition, and starts execution
+-- mean while the thread which gave lock again tries to acquire a lock 
+-- And now as the lock is already held by other thread it has to sleep and wait on mutex waiting list 
+
+      ----------  TestHoareSemantic . Init  ----------
+
+      method Init ()
+        --
+        -- This method is called once at kernel startup time to initialize
+        -- the one and only "ThreadManager" object.
+        --
+        --  print ("Initializing Thread Manager...\n")
+
+        var j:int
+
+        threadTable=new array of Thread {MAX_NUMBER_OF_PROCESSES of new Thread}
+        freeList=new List [Thread]
+        aThreadBecameFree= new HoareCondition
+        threadManagerLock= new HoareMutex
+        aThreadBecameFree.Init()
+        threadManagerLock.Init()
+
+        for j= 0 to MAX_NUMBER_OF_PROCESSES-1
+                threadTable[j].Init("Hoare new thread")
+                threadTable[j].status=UNUSED
+                freeList.AddToEnd(&threadTable[j])
+        endFor
+
+    endMethod
+
+ ----------  TestHoareSemantic . Print  ----------
+
+      method Print ()
+       
+-- Print each thread.  Since we look at the freeList, this
+-- routine disables interrupts so the printout will be a
+-- consistent snapshot of things.
+      
+        var i, oldStatus: int
+          oldStatus = SetInterruptsTo (DISABLED)
+          print ("Here is the thread table...\n")
+          for i = 0 to MAX_NUMBER_OF_PROCESSES-1
+            print ("  ")
+            printInt (i)
+            print (":")
+            ThreadPrintShort (&threadTable[i])
+          endFor
+          print ("Here is the FREE list of Threads:\n   ")
+          freeList.ApplyToEach (PrintObjectAddr)
+          nl ()
+          oldStatus = SetInterruptsTo (oldStatus)
+        endMethod
+
+  ----------  TestHoareSemantic . GetANewThread  ----------
+
+      method GetANewThread () returns ptr to Thread
+
+-- This method returns a new Thread; it will wait
+-- until one is available.
+         
+      var
+        threadInUse: ptr to Thread
+
+        threadManagerLock.Lock() 							-- acquires monitors mutex
+
+        if (freeList.IsEmpty())
+		aThreadBecameFree.Wait(&threadManagerLock)				-- if freeList is empty make the requesting thread wait on condition variable for resources 
+	endIf			
+	threadInUse=freeList.Remove()
+	if !threadInUse									-- if freelist is empty print fatal error	
+		FatalError("Cannot not remove any thread as the waiting list is empty:  ")
+	endIf
+	
+	
+          threadInUse.status = JUST_CREATED						-- sets the status of thread as just created 
+
+          threadManagerLock.Unlock()						  	-- releases monitors mutex
+
+          return threadInUse
+
+        endMethod
+
+      ----------  TestHoareSemantic . FreeThread  ----------
+
+      method FreeThread (th: ptr to Thread)
+        
+-- This method is passed a ptr to a Thread;  It moves it
+-- to the FREE list.
+          
+        threadManagerLock.Lock()						-- acquires monitors mutex 
+
+          th.status=UNUSED							-- sets the status of thread to unused
+          freeList.AddToEnd(th)							-- add the free thread to freeList
+          aThreadBecameFree.Signal(&threadManagerLock)				-- signals waiting threads on condition variable aThreadBecameFree waiting list
+
+        threadManagerLock.Unlock()						-- releases monitors mutex
+        endMethod
+
+    endBehavior
+
+
+
 --------------------------  ProcessControlBlock  ------------------------------
 
   behavior ProcessControlBlock
@@ -962,6 +1267,115 @@ code Kernel
     --
       FatalError ("ProcessFinish is not implemented")
     endFunction
+
+---------------------------  ProcessManagerHoareSemantic  ---------------------------------
+
+  behavior ProcessManagerHoareSemantic
+
+      ----------  ProcessManager . Init  ----------
+
+      method Init ()
+        --
+        -- This method is called once at kernel startup time to initialize
+        -- the one and only "processManager" object.  
+        --
+        var i: int
+          processTable = new array of ProcessControlBlock{MAX_NUMBER_OF_PROCESSES of new ProcessControlBlock}
+          freeList = new List[ProcessControlBlock]
+          processManagerLock = new HoareMutex
+          aProcessBecameFree = new HoareCondition
+          aProcessDied = new HoareCondition
+          for i=0 to MAX_NUMBER_OF_PROCESSES - 1
+            processTable[i].Init()
+            freeList.AddToEnd(&processTable[i])
+            processTable[i].status = FREE
+          endFor
+        processManagerLock.Init()
+        aProcessBecameFree.Init()
+        aProcessDied.Init()
+        endMethod
+
+      ----------  ProcessManager . Print  ----------
+
+      method Print ()
+        -- 
+        -- Print all processes.  Since we look at the freeList, this
+        -- routine disables interrupts so the printout will be a
+        -- consistent snapshot of things.
+        -- 
+        var i, oldStatus: int
+          oldStatus = SetInterruptsTo (DISABLED)
+          print ("Here is the process table...\n")
+          for i = 0 to MAX_NUMBER_OF_PROCESSES-1
+            print ("  ")
+            printInt (i)
+            print (":")
+            processTable[i].Print ()
+          endFor
+          print ("Here is the FREE list of ProcessControlBlocks:\n   ")
+          freeList.ApplyToEach (PrintObjectAddr)
+          nl ()
+          oldStatus = SetInterruptsTo (oldStatus)
+        endMethod
+
+      ----------  ProcessManager . PrintShort  ----------
+
+      method PrintShort ()
+        -- 
+        -- Print all processes.  Since we look at the freeList, this
+        -- routine disables interrupts so the printout will be a
+        -- consistent snapshot of things.
+        -- 
+        var i, oldStatus: int
+          oldStatus = SetInterruptsTo (DISABLED)
+          print ("Here is the process table...\n")
+          for i = 0 to MAX_NUMBER_OF_PROCESSES-1
+            print ("  ")
+            printInt (i)
+            processTable[i].PrintShort ()
+          endFor
+          print ("Here is the FREE list of ProcessControlBlocks:\n   ")
+          freeList.ApplyToEach (PrintObjectAddr)
+          nl ()
+          oldStatus = SetInterruptsTo (oldStatus)
+        endMethod
+
+      ----------  ProcessManager . GetANewProcess  ----------
+
+      method GetANewProcess () returns ptr to ProcessControlBlock
+        --
+        -- This method returns a new ProcessControlBlock; it will wait
+        -- until one is available.
+        --
+        var nextProcess: ptr to ProcessControlBlock
+          processManagerLock.Lock()
+          if freeList.IsEmpty()
+            aProcessBecameFree.Wait(&processManagerLock)
+          endIf
+          nextProcess = freeList.Remove()
+          (*nextProcess).pid = nextPid
+          nextPid = nextPid + 1
+          (*nextProcess).status = ACTIVE
+          processManagerLock.Unlock()
+          return nextProcess
+        endMethod
+
+      ----------  ProcessManager . FreeProcess  ----------
+
+      method FreeProcess (p: ptr to ProcessControlBlock)
+        --
+        -- This method is passed a ptr to a Process;  It moves it
+        -- to the FREE list.
+        --
+          processManagerLock.Lock()
+				  (*p).status = FREE
+				  freeList.AddToEnd(p)
+				  aProcessBecameFree.Signal(&processManagerLock)
+				  processManagerLock.Unlock()
+        endMethod
+
+
+    endBehavior
 
 -----------------------------  FrameManager  ---------------------------------
 

@@ -31,6 +31,14 @@ code Main
       frameManager = new FrameManager
       frameManager.Init ()
 
+      -- Initialize the TestHoareSemantic
+      testHoareSemantic  = new TestHoareSemantic
+      testHoareSemantic.Init ()
+
+      -- Initialize the TestProcessManagerHoareSemantic
+      processManagerHoareSemantic  = new ProcessManagerHoareSemantic
+      processManagerHoareSemantic.Init ()
+      
 -- THE FOLLOWING CODE MAY BE USEFUL DURING TESTING, SO YOU MAY WISH TO
 -- UNCOMMENT AND USE ALL OR PART OF IT.  HOWEVER, FOR YOUR FINAL RUN,
 -- PLEASE USE THIS FILE EXACTLY AS DISTRIBUTED.
@@ -105,14 +113,36 @@ code Main
       processManager.FreeProcess (proc2)
       frameManager.ReturnAllFrames(&proc3.addrSpace)
       processManager.FreeProcess (proc3)
+      print ("\n====================  INITIAL STATE FOR TESTING HOARE SEMANTIC CODE  ====================\n\n")
+     testHoareSemantic.Print ()
+      print ("\n=========================================================\n\n")
 
+      -- Allocate some threads
+      print ("\n*****  Allocating some threads  *****\n\n")
+      th0 = testHoareSemantic.GetANewThread()
+      th1 = testHoareSemantic.GetANewThread()
+      th2 = testHoareSemantic.GetANewThread()
+
+      -- Rreturn one of the threads
+      print ("*****  Returning one thread  *****\n\n")
+     testHoareSemantic.FreeThread (th1)
+
+      -- Print the new state
+      print ("\n====================  NEW STATE FOR TESTING HOARE SEMANTIC CODE ====================\n\n")
+     testHoareSemantic.Print ()
+      print ("\n=========================================================\n\n")
+
+      -- Return the other threads
+     testHoareSemantic.FreeThread (th0)
+     testHoareSemantic.FreeThread (th2)
 */
 
       -- Run more thorough tests.
       RunThreadManagerTests ()
       RunProcessManagerTests ()
       RunFrameManagerTests ()
-
+      RunHoareSemanticTests ()
+      RunProcessManagerHoareSemanticTests()
       RuntimeExit ()
 
     endFunction
@@ -467,6 +497,166 @@ code Main
           FatalError ("Data corruption, indicating that frame was shared")
         endIf
       endFor
+    endFunction
+-----------------------------  RunHoareSemanticTests   ---------------------------------
+--
+-- This function tests the ThreadManager using hoare semantic.  It creates a bunch of threads
+-- (NUM_THREADS) and starts each thread running.  Each thread will execute
+-- the "TestForHoareSemantic " function.  The main thread will then wait until all
+-- the threads complete.  To control this, there is a single Semaphore "allDone".
+-- Each TestThreadManager thread signals it and the main thread will wait
+-- for NUM-THREAD times, i.e., until all threads have finished.
+--
+-- Each TestThreadManager does basically this:
+--        loop NUMBER_ITERATIONS times
+--           call GetANewThread
+--           wait
+--           call FreeThread
+--           wait
+--        endLoop
+--
+  function RunHoareSemanticTests ()
+      var i: int
+          th: ptr to Thread
+
+      allDone.Init (0)
+      freeze.Init (0)
+      uniqueNumberLock.Init ()
+      nextUnique = 1
+
+      print ("\n\n*****  HOARE SEMANTIC TEST  *****\n\n")
+
+      for i = 1 to NUM_THREADS
+        th = alloc Thread
+        th.Init ("TestForHoareSemantic")
+        th.Fork (TestForHoareSemantic, i)
+      endFor
+
+      -- Wait for all the testing threads to complete.
+      -- (Make sure you see the completion message!)
+      for i = 1 to NUM_THREADS
+        allDone.Down ()
+      endFor
+
+      if GetUniqueNumber (1) != NUM_THREADS * NUMBER_ITERATIONS + 1
+        FatalError ("Concurrency control failure (1)")
+      endIf
+      print ("\n\n***** TEST FOR HOARE SEMANTIC  COMPLETED SUCCESSFULLY *****\n\n")
+
+    endFunction
+
+-----------------------------  TestForHoareSemantic  ---------------------------------
+--
+-- This function is the main function for a thread which will test the
+-- Hoare semantic.  It will request and return Thread objects.  First, it
+-- grabs a unique number and stuffs it in the Thread.  Later, it makes sure that
+-- the number is unchanged.  It could only have changed if some other tester
+-- was allowed to access this Thread object before this tester returned it.
+
+function TestForHoareSemantic (myID: int)
+
+       var i, j, e: int
+           th: ptr to Thread
+       -- printIntVar ("Thread started", myID)
+       for i = 1 to NUMBER_ITERATIONS
+         printInt (myID)
+         e = GetUniqueNumber (1)
+         th = testHoareSemantic.GetANewThread ()
+         th.regs[0] = e
+         for j = 1 to WAIT_TIME+i
+           currentThread.Yield ()
+         endFor
+         if e != th.regs[0]
+           FatalError ("Concurrency control failure (2)")
+         endIf
+         printChar ('.')
+        testHoareSemantic.FreeThread (th)
+         for j = 1 to WAIT_TIME-i
+           currentThread.Yield ()
+         endFor
+       endFor
+       allDone.Up ()
+       freeze.Down ()
+     endFunction
+
+-----------------------------  RunProcessManagerHoareSemanticTests  ---------------------------------
+--
+-- This function tests the ProcessManager.  It creates a bunch of tester threads
+-- (NUM_THREADS) and starts each thread running.  Each tester thread will execute
+-- the "TestProcessManager" function.  The main thread will then wait until all
+-- the testers complete.  To control this, there is a single Semaphore "allDone".
+-- Each TestProcessManager thread signals it and the main thread will wait
+-- for NUM-THREAD times, i.e., until all tester threads have finished.
+--
+-- Each TestProcessManager does basically this:
+--        loop NUMBER_ITERATIONS times
+--           call GetANewProcess
+--           wait
+--           call FreeProcess
+--           wait
+--        endLoop
+--
+  function RunProcessManagerHoareSemanticTests ()
+      var i: int
+          th: ptr to Thread
+
+      allDone.Init (0)
+      freeze.Init (0)
+      uniqueNumberLock.Init ()
+      nextUnique = 1
+
+      print ("\n\n*****  PROCESS-MANAGER-HOARE-SEMANTIC TEST  *****\n\n")
+
+      for i = 1 to NUM_THREADS
+        th = alloc Thread
+        th.Init ("TestProcessManagerHoareSemantic")
+        th.Fork (TestProcessManagerHoareSemantic, i)
+      endFor
+
+      -- Wait for all the testing threads to complete.
+      -- (Make sure you see the completion message!)
+      for i = 1 to NUM_THREADS
+        allDone.Down ()
+      endFor
+
+      if GetUniqueNumber (1) != NUM_THREADS * NUMBER_ITERATIONS + 1
+        FatalError ("Concurrency control failure (1)")
+      endIf
+      print ("\n\n***** PROCESS-MANAGER-HOARE-SEMANTIC TEST COMPLETED SUCCESSFULLY *****\n\n")
+
+    endFunction
+-----------------------------  TestProcessManagerHoareSemantic  ---------------------------------
+--
+-- This function is the main function for a thread which will test the
+-- ProcessManager.  It will request and return ProcessControlBlocks.  First, it
+-- grabs a unique number and stuffs it in the PCB.  Later, it makes sure that
+-- the number is unchanged.  It could only have changed if some other tester
+-- was also allowed to access this ProcessContolBlock  before this tester
+-- returned it.
+--
+  function TestProcessManagerHoareSemantic (myID: int)
+      var i, j, e: int
+          pcb: ptr to ProcessControlBlock
+      -- printIntVar ("Thread started", myID)
+      for i = 1 to NUMBER_ITERATIONS
+        printInt (myID)
+        e = GetUniqueNumber (1)
+        pcb = processManagerHoareSemantic.GetANewProcess ()
+        pcb.exitStatus = e
+        for j = 1 to WAIT_TIME+i
+          currentThread.Yield ()
+        endFor
+        if e != pcb.exitStatus
+          FatalError ("Concurrency control failure (2)")
+        endIf
+        printChar ('.')
+        processManagerHoareSemantic.FreeProcess (pcb)
+        for j = 1 to WAIT_TIME-i
+          currentThread.Yield ()
+        endFor
+      endFor
+      allDone.Up ()
+      freeze.Down ()
     endFunction
 
 endCode
