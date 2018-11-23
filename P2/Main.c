@@ -22,11 +22,11 @@ code Main
 
       -----  Uncomment any one of the following to perform the desired test  -----
 
-      SimpleThreadExample ()
+      -- SimpleThreadExample ()
       -- MoreThreadExamples ()
       -- TestMutex ()
       -- ProducerConsumer ()
-      -- DiningPhilosophers ()
+      DiningPhilosophers ()
 
       ThreadFinish ()
 
@@ -309,9 +309,16 @@ code Main
     bufferSize: int = 0
     bufferNextIn: int = 0
     bufferNextOut: int = 0
+    bufferSpaceLeft : Semaphore = new Semaphore
+    bufferLock : Mutex = new Mutex
+    bufferContent : Semaphore = new Semaphore
     thArray: array [8] of Thread = new array of Thread { 8 of new Thread }
-
+    
   function ProducerConsumer ()
+
+      bufferLock.Init()
+      bufferContent.Init(0)
+      bufferSpaceLeft.Init(BUFFER_SIZE)
 
       print ("     ")
 
@@ -348,8 +355,10 @@ code Main
         c: char = intToChar ('A' + myId - 1)
       for i = 1 to 5
         -- Perform synchroniztion...
-
+        bufferSpaceLeft.Down()
+        bufferLock.Lock()
         -- Add c to the buffer
+        
         buffer [bufferNextIn] = c
         bufferNextIn = (bufferNextIn + 1) % BUFFER_SIZE
         bufferSize = bufferSize + 1
@@ -358,6 +367,8 @@ code Main
         PrintBuffer (c)
 
         -- Perform synchronization...
+        bufferContent.Up()
+        bufferLock.Unlock()
 
       endFor
     endFunction
@@ -365,9 +376,11 @@ code Main
   function Consumer (myId: int)
       var
         c: char
+
       while true
         -- Perform synchroniztion...
-
+        bufferContent.Down()
+        bufferLock.Lock()
         -- Remove next character from the buffer
         c = buffer [bufferNextOut]
         bufferNextOut = (bufferNextOut + 1) % BUFFER_SIZE
@@ -377,6 +390,9 @@ code Main
         PrintBuffer (c)
 
         -- Perform synchronization...
+        bufferSpaceLeft.Up()
+        bufferLock.Unlock()
+
 
       endWhile
     endFunction
@@ -500,6 +516,8 @@ code Main
     superclass Object
     fields
       status: array [5] of int             -- For each philosopher: HUNGRY, EATING, or THINKING
+      monitorLock : Mutex
+      startEating : array [5] of Condition
     methods
       Init ()
       PickupForks (p: int)
@@ -511,17 +529,49 @@ code Main
 
     method Init ()
       -- Initialize so that all philosophers are THINKING.
-      -- ...unimplemented...
+      var i: int
+      status = new array of int { 5 of THINKING}
+      startEating = new array [5] of Condition { 5 of new Condition}
+      for i = 0 to 4
+        startEating[i].Init()
+      endFor
+      monitorLock = new Mutex
+      monitorLock.Init()
       endMethod
 
     method PickupForks (p: int)
       -- This method is called when philosopher 'p' is wants to eat.
-      -- ...unimplemented...
+      monitorLock.Lock()
+      status[p] = HUNGRY
+      self.PrintAllStatus()
+      if status[(p+1)%5] != EATING && status[(p-1 + 5)%5] != EATING
+        status[p] = EATING
+        self.PrintAllStatus()
+        startEating[p].Signal( & monitorLock )
+      endIf
+      if status[p] != EATING
+        startEating[p].Wait(& monitorLock)
+      endIf
+      monitorLock.Unlock()
       endMethod
 
     method PutDownForks (p: int)
       -- This method is called when the philosopher 'p' is done eating.
-      -- ...unimplemented...
+      monitorLock.Lock()
+      status[p] = THINKING
+      self.PrintAllStatus()
+      if status[(p+2)%5] != EATING && status[(p)%5] != EATING
+        status[(p+1)%5] = EATING
+        self.PrintAllStatus()
+        startEating[(p+1)%5].Signal( & monitorLock )
+      endIf
+      if status[(p-2 + 5)%5] != EATING && status[(p)%5] != EATING
+        status[((p-1)+5)%5] = EATING
+        self.PrintAllStatus()
+        startEating[(p-1+5)%5].Signal( & monitorLock )
+      endIf
+      monitorLock.Unlock()
+
       endMethod
 
     method PrintAllStatus ()

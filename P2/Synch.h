@@ -15,6 +15,9 @@ header Synch
 
   class Mutex
     superclass Object
+    fields
+      sema: Semaphore
+      heldBy: ptr to Thread
     methods
       Init ()
       Lock ()
